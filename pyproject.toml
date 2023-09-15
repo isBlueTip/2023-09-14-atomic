@@ -1,0 +1,8 @@
+[tool.black]
+line-length = 120
+target-version = ['py39']
+exclude = '''
+'''
+[tool.isort]
+line_length = 120
+multi_line_output = 5
