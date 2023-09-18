@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 from config import Config
+from constants import DESTINATIONS
 
 parser = argparse.ArgumentParser()
 
@@ -18,28 +19,15 @@ parser.add_argument("-d", "--dry", action="store_true")
 
 args = parser.parse_args()
 
-source_path_1 = Path(args.path_1 + "file1.txt")
-source_path_2 = Path(args.path_2 + "file2.txt")
-source_path_3 = Path(args.path_3 + "file3.txt")
+
+def is_valid_path(path: str) -> bool:
+    # Checking if source files exist
+    if not Path(path).exists():
+        return False
+    return True
 
 
-OVERRIDE = args.override
-DRY = args.dry
-
-if not source_path_1.exists():
-    print("file1 path doesn't exist")
-    raise SystemExit(1)
-
-if not source_path_2.exists():
-    print("file2 path doesn't exist")
-    raise SystemExit(1)
-
-if not source_path_3.exists():
-    print("file3 path doesn't exist")
-    raise SystemExit(1)
-
-
-def send_to_ftp(source_path: Path, override: bool = False):
+def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
     try:
         connection = FTP(host=Config.FTP_ADDRESS, user=Config.FTP_USER, passwd=Config.FTP_PASSWORD)
     except Exception as e:
@@ -56,10 +44,7 @@ def send_to_ftp(source_path: Path, override: bool = False):
             raise SystemExit(1)
 
 
-# def send_to_owncloud(source_path: Path, override: bool = False):
-#     print(source_path)
-#     print("")
-#
+# def send_to_owncloud(source_path: Path, override: bool = False, dry: bool = False):
 #     try:
 #         with open(source_path, "rb") as file:
 #             response = requests.post(
@@ -77,12 +62,13 @@ def send_to_ftp(source_path: Path, override: bool = False):
 #         return False
 
 
-def send_locally(source_path: Path, override: bool = False):
-    if not Path(Config.LOCAL_TARGET_PATH).exists():
-        print("local target path doesn't exist")
+def send_locally(source_path: Path, override: bool = False, dry: bool = False):
+    if not Path(Config.LOCAL_TARGET_FOLDER).exists():
+        print("local target folder doesn't exist")
         raise SystemExit(1)
 
-    target_path = Path(Config.LOCAL_TARGET_PATH + source_path.name)
+    # Building complete target path
+    target_path = Path(Config.LOCAL_TARGET_FOLDER + source_path.name)
 
     # from os import listdir
     # from os.path import isfile, join
@@ -100,9 +86,32 @@ def send_locally(source_path: Path, override: bool = False):
 
 
 if __name__ == "__main__":
+    # Building source files paths
+    source_paths = list()
+    source_paths.append(args.path_1 + DESTINATIONS["files"][0]["name"])
+    source_paths.append(args.path_2 + DESTINATIONS["files"][1]["name"])
+    source_paths.append(args.path_3 + DESTINATIONS["files"][2]["name"])
+
+    for i, path in enumerate(source_paths, start=1):
+        if not is_valid_path(path):
+            print(path)
+            print(f"file{i} path doesn't exist")
+            raise SystemExit(1)
+
+    override = args.override
+    dry = args.dry
+
+    for file in DESTINATIONS["files"]:
+        if "ftp" in file["endpoints"]:
+            pass
+        if "owncloud" in file["endpoints"]:
+            pass
+        if "folder" in file["endpoints"]:
+            pass
+
     # print(send_to_ftp(source_path_1, OVERRIDE, DRY))
     # print(send_to_owncloud(source_path_2, OVERRIDE, DRY))
-    print(send_locally(source_path_3, OVERRIDE, DRY))
+    # print(send_locally(source_path_3, OVERRIDE, DRY))
 
 
 # todo обработать вариант с отсутствующей целевой папкой
