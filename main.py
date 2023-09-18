@@ -22,7 +22,6 @@ args = parser.parse_args()
 
 def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
     """
-
     Sends file from source path to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
@@ -41,7 +40,8 @@ def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
         raise SystemExit(f"ERROR: <{source_path.name}> already exists on the FTP server. Try using --override.")
 
     with open(source_path, "rb") as file:
-        connection.storlines(f"STOR {file.name}", file)
+        if not dry:
+            connection.storlines(f"STOR {file.name}", file)
         connection.close()
 
 
@@ -67,6 +67,7 @@ def send_locally(source_path: Path, dest_path: Path, override: bool = False, dry
     """
     Copy file from source path to local target_path folder.
     Dry mode would suppress actual copying but produce actual-like output.
+
     :param source_path:
     :param override:
     :param dry:
@@ -74,7 +75,8 @@ def send_locally(source_path: Path, dest_path: Path, override: bool = False, dry
     """
     # Check if the file already exists
     if not dest_path.exists() or override:
-        shutil.copy(source_path, dest_path)
+        if not dry:
+            shutil.copy(source_path, dest_path)
     else:
         raise SystemExit(f"ERROR: <{source_path.name}> already exists in the local target dir. Try using --override.")
 
@@ -114,4 +116,4 @@ if __name__ == "__main__":
             print("sending locally", "\n")
             send_locally(source_path, target_path, OVERRIDE, DRY)
             print("finish sending locally", "\n")
-    print("successfully copied 3 files")
+    print("SUCCESS: copied 3 files.")
