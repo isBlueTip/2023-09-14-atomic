@@ -20,14 +20,16 @@ parser.add_argument("-d", "--dry", action="store_true")
 args = parser.parse_args()
 
 
-def is_valid_path(path: str) -> bool:
-    # Checking if source files exist
-    if not Path(path).exists():
-        return False
-    return True
-
-
 def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
+    """
+    Sends file from source path to FTP server's root folder.
+    Dry mode would suppress actual copying but produce actual-like output.
+
+    :param source_path:
+    :param override:
+    :param dry:
+    :return:
+    """
     try:
         connection = FTP(host=Config.FTP_ADDRESS, user=Config.FTP_USER, passwd=Config.FTP_PASSWORD)
     except Exception as e:
@@ -81,20 +83,18 @@ def send_locally(source_path: Path, override: bool = False, dry: bool = False):
             print(f"{file.name} already exists; try using --override")
             raise SystemExit(1)
 
-    # print("success!!!")
     return "end"
 
 
 if __name__ == "__main__":
     # Building source files paths
     source_paths = list()
-    source_paths.append(args.path_1 + DESTINATIONS["files"][0]["name"])
-    source_paths.append(args.path_2 + DESTINATIONS["files"][1]["name"])
-    source_paths.append(args.path_3 + DESTINATIONS["files"][2]["name"])
+    source_paths.append(Path(args.path_1 + DESTINATIONS["files"][0]["name"]))
+    source_paths.append(Path(args.path_2 + DESTINATIONS["files"][1]["name"]))
+    source_paths.append(Path(args.path_3 + DESTINATIONS["files"][2]["name"]))
 
     for i, path in enumerate(source_paths, start=1):
-        if not is_valid_path(path):
-            print(path)
+        if not path.exists():
             print(f"file{i} path doesn't exist")
             raise SystemExit(1)
 
