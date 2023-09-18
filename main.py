@@ -22,6 +22,7 @@ args = parser.parse_args()
 
 def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
     """
+
     Sends file from source path to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
@@ -33,17 +34,15 @@ def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
     try:
         connection = FTP(host=Config.FTP_ADDRESS, user=Config.FTP_USER, passwd=Config.FTP_PASSWORD)
     except Exception as e:
-        return f"an error occurred while connecting to FTP server: {e}"
-    server_files = connection.nlst()
+        raise SystemExit(f"ERROR: can't connect to FTP server: {e}")
+
+    # Check if file is already exists on the server
+    if source_path.name in connection.nlst() and not override:
+        raise SystemExit(f"ERROR: <{source_path.name}> already exists on the FTP server. Try using --override")
 
     with open(source_path, "rb") as file:
-        if not (file.name in server_files) or override:
-            connection.storlines(f"STOR {file.name}", file)
-            connection.close()
-        else:
-            connection.close()
-            print(f"{file.name}: file already exists on FTP; try using --override")
-            raise SystemExit(1)
+        connection.storlines(f"STOR {file.name}", file)
+        connection.close()
 
 
 # def send_to_owncloud(source_path: Path, override: bool = False, dry: bool = False):
@@ -66,8 +65,7 @@ def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False):
 
 def send_locally(source_path: Path, override: bool = False, dry: bool = False):
     if not Path(Config.LOCAL_TARGET_FOLDER).exists():
-        print("local target folder doesn't exist")
-        raise SystemExit(1)
+        raise SystemExit("local target folder doesn't exist")
 
     # Building complete target path
     target_path = Path(Config.LOCAL_TARGET_FOLDER + source_path.name)
@@ -80,8 +78,7 @@ def send_locally(source_path: Path, override: bool = False, dry: bool = False):
         if not target_path.exists() or override:
             shutil.copy(source_path, target_path)
         else:
-            print(f"{file.name} already exists; try using --override")
-            raise SystemExit(1)
+            raise SystemExit(f"{file.name} already exists; try using --override")
 
     return "end"
 
@@ -101,17 +98,20 @@ if __name__ == "__main__":
     override = args.override
     dry = args.dry
 
-    for file in DESTINATIONS["files"]:
+    for source_path, file in zip(source_paths, DESTINATIONS["files"]):
         if "ftp" in file["endpoints"]:
-            pass
+            print("sending to ftp", "\n", "\n")
+            send_to_ftp(source_path, override, dry)
+            print("finish sending to ftp", "\n", "\n")
         if "owncloud" in file["endpoints"]:
-            pass
+            print("sending to owncloud", "\n", "\n")
+            # send_to_owncloud(source_path, override, dry)
+            print("finish sending to owncloud", "\n", "\n")
         if "folder" in file["endpoints"]:
-            pass
-
-    # print(send_to_ftp(source_path_1, OVERRIDE, DRY))
-    # print(send_to_owncloud(source_path_2, OVERRIDE, DRY))
-    # print(send_locally(source_path_3, OVERRIDE, DRY))
+            print("sending locally", "\n", "\n")
+            send_locally(source_path, override, dry)
+            print("finish sending locally", "\n", "\n")
+    print("successfully copied 3 files")
 
 
 # todo обработать вариант с отсутствующей целевой папкой
