@@ -13,4 +13,6 @@ class Config:
     OWNCLOUD_URL = os.getenv("OWNCLOUD_URL", "https://fs.automiq.ru/owncloud/index.php/")
     OWNCLOUD_PASSWORD = os.getenv("OWNCLOUD_PASSWORD", "_xxx_aaa11")
 
-    OWNCLOUD_FOLDER_PATH = os.getenv("OWNCLOUD_FOLDER_PATH", "/tmp/xxxx-123321/")
+    OWNCLOUD_TARGET_PATH = os.getenv("OWNCLOUD_FOLDER_PATH", "/tmp/xxxx-123321/")
+
+    LOCAL_TARGET_PATH = os.getenv("LOCAL_PATH", "/tmp/test-230531/")
