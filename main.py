@@ -40,9 +40,15 @@ def send_to_ftp(path: Path, override: bool = False):
         connection = FTP(host=Config.FTP_ADDRESS, user=Config.FTP_USER, passwd=Config.FTP_PASSWORD)
     except Exception as e:
         return f"an error occurred while connecting to FTP server: {e}"
+    server_files = connection.nlst()
+
     with open(path, "rb") as file:
-        connection.storlines(f"STOR {file.name}", file)
-    connection.close()
+        if not (file.name in server_files) or override:
+            connection.storlines(f"STOR {file.name}", file)
+            connection.close()
+        else:
+            print(f"{file.name}: file already exists. try using --override")
+            raise SystemExit(1)
 
 
 def send_to_owncloud(path: Path, override: bool = False):
@@ -54,6 +60,7 @@ def send_locally(path: Path, override: bool = False):
     print(path)
 
 
-print(send_to_ftp(path_1, OVERRIDE))
-send_to_owncloud(path_2, OVERRIDE)
-send_locally(path_3, OVERRIDE)
+if __name__ == "__main__":
+    print(send_to_ftp(path_1, OVERRIDE))
+    # print(send_to_owncloud(path_2, OVERRIDE))
+    # print(send_locally(path_3, OVERRIDE))
