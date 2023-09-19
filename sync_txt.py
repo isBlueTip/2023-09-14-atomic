@@ -1,14 +1,9 @@
 import argparse
-import asyncio
-import os
 import shutil
 import time
 from collections import defaultdict
 from ftplib import FTP
 from pathlib import Path
-
-import aioftp
-import requests
 
 from config import Config
 from constants import DESTINATIONS
@@ -44,22 +39,8 @@ def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False)
     connection.close()
 
 
-# def send_to_owncloud(source_path: Path, override: bool = False, dry: bool = False):
-#     try:
-#         with open(source_path, "rb") as file:
-#             response = requests.post(
-#                 Config.OWNCLOUD_URL,
-#                 files={"file": (os.path.basename(source_path), file)},
-#                 auth=("user", Config.OWNCLOUD_PASSWORD),
-#             )
-#             if response.status_code == 200:
-#                 return True
-#             else:
-#                 print(f"OwnCloud Error: {response.text}")
-#                 return False
-#     except Exception as e:
-#         print(f"OwnCloud Error: {e}")
-#         return False
+# def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False):
+#     pass
 
 
 def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, dry: bool = False):
@@ -131,7 +112,7 @@ if __name__ == "__main__":
 
         if key == "owncloud":  # Copying to OwnCloud
             print(f"sending {len(paths)} file(s) to owncloud")
-            # send_to_owncloud(source_path, OVERRIDE, DRY)
+            # send_to_owncloud(paths, OVERRIDE, DRY)
 
         if key == "folder":  # Copying locally
             # Check if target dir exists
