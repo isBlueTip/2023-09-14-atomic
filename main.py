@@ -19,9 +19,9 @@ def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False)
     Sends files from list with source paths to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
-    :param source_paths:
-    :param override:
-    :param dry:
+    :param source_paths: list of source paths objects
+    :param override: flag to overwrite existing files
+    :param dry: flag to suppress actual changes in system
     :return:
     """
 
@@ -32,17 +32,15 @@ def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False)
 
     files_list = connection.nlst()
 
-    print(f"files_list = {files_list}")
-
-    for path in source_paths:
+    for source_path in source_paths:
         # Check if the  file is already exists on the server
-        if path.name in connection.nlst() and not override:
+        if source_path.name in files_list and not override:
             connection.close()
-            raise SystemExit(f"ERROR: <{path.name}> already exists on the FTP server. Try using --override.")
+            raise SystemExit(f"ERROR: <{source_path.name}> already exists on the FTP server. Try using --override.")
 
-        with open(path, "rb") as file:
+        with open(source_path, "rb") as file:
             if not dry:
-                connection.storlines(f"STOR {path.name}", file)
+                connection.storlines(f"STOR {source_path.name}", file)
     connection.close()
 
 
@@ -69,7 +67,7 @@ def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, 
     Copy file from source path to local target_path folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
-    :param source_paths: list of paths objects
+    :param source_paths: list of source paths objects
     :param dest_path: destination directory path object
     :param override: flag to overwrite existing files
     :param dry: flag to suppress actual changes in system
@@ -129,7 +127,7 @@ if __name__ == "__main__":
     for key, paths in destinations.items():
         if key == "ftp":  # Copying to FTP
             print(f"sending {len(paths)} file(s) to ftp")
-            # send_to_ftp(paths, OVERRIDE, DRY)
+            send_to_ftp(paths, OVERRIDE, DRY)
 
         if key == "owncloud":  # Copying to OwnCloud
             print(f"sending {len(paths)} file(s) to owncloud")
@@ -141,9 +139,7 @@ if __name__ == "__main__":
                 raise SystemExit("ERROR: local target directory doesn't exist.")
 
             print(f"sending {len(paths)} file(s) locally")
-            print(f"paths = {paths}")
-            print("")
-            send_locally(paths, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY)
+            # send_locally(paths, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY)
 
     print(time.time() - start)
     print("SUCCESS: copied 3 files.")
