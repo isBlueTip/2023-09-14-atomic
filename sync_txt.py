@@ -9,7 +9,7 @@ from config import Config
 from constants import DESTINATIONS
 
 
-def parse_args() -> argparse.Namespace:
+def init_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("path_1")
@@ -79,7 +79,9 @@ def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, 
 
 
 def main():
-    args = parse_args()
+    args = init_args()
+
+    start = time.time()
 
     # Building source files paths
     source_paths = list()
@@ -96,8 +98,6 @@ def main():
 
     destinations = defaultdict(list)
 
-    start = time.time()
-
     # Building dict with endpoints as keys
     for source_path, file in zip(source_paths, DESTINATIONS["files"]):
         if "ftp" in file["endpoints"]:
@@ -109,6 +109,7 @@ def main():
         if "folder" in file["endpoints"]:
             destinations["folder"].append(source_path)
 
+    # Main copying loop
     for key, paths in destinations.items():
         if key == "ftp":  # Copying to FTP
             print(f"sending {len(paths)} file(s) to ftp")
@@ -124,10 +125,10 @@ def main():
                 raise SystemExit("ERROR: local target directory doesn't exist.")
 
             print(f"sending {len(paths)} file(s) locally")
-            # send_locally(paths, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY)
+            send_locally(paths, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY)
 
-    print(time.time() - start)
-    print("SUCCESS: copied 3 files.")
+    seconds_elapsed = int(round(time.time() - start, 0))
+    print(f"SUCCESS: copied {len(destinations)} file(s) in {seconds_elapsed} second(s)")
 
 
 if __name__ == "__main__":
