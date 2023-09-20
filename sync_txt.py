@@ -9,7 +9,19 @@ from config import Config
 from constants import DESTINATIONS
 
 
-def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False):
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("path_1")
+    parser.add_argument("path_2")
+    parser.add_argument("path_3")
+    parser.add_argument("-o", "--override", action="store_true")
+    parser.add_argument("-d", "--dry", action="store_true")
+
+    return parser.parse_args()
+
+
+def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
     """
     Sends files from list with source paths to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
@@ -39,11 +51,11 @@ def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False)
     connection.close()
 
 
-# def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False):
+# def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
 #     pass
 
 
-def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, dry: bool = False):
+def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, dry: bool = False) -> None:
     """
     Copy file from source path to local target_path folder.
     Dry mode would suppress actual copying but produce actual-like output.
@@ -66,16 +78,8 @@ def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, 
             )
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("path_1")
-    parser.add_argument("path_2")
-    parser.add_argument("path_3")
-    parser.add_argument("-o", "--override", action="store_true")
-    parser.add_argument("-d", "--dry", action="store_true")
-
-    args = parser.parse_args()
+def main():
+    args = parse_args()
 
     # Building source files paths
     source_paths = list()
@@ -124,3 +128,7 @@ if __name__ == "__main__":
 
     print(time.time() - start)
     print("SUCCESS: copied 3 files.")
+
+
+if __name__ == "__main__":
+    main()
