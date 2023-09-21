@@ -1,9 +1,12 @@
 import argparse
+import asyncio
 import shutil
 import time
 from collections import defaultdict
 from ftplib import FTP
 from pathlib import Path
+
+import aioftp
 
 from config import Config
 from constants import DESTINATIONS
@@ -21,7 +24,7 @@ def init_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
+async def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False) -> None:
     """
     Sends files from list with source paths to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
@@ -31,27 +34,15 @@ def send_to_ftp(source_paths: [Path], override: bool = False, dry: bool = False)
     :param dry: flag to suppress actual changes in system
     :return:
     """
-
-    try:
-        connection = FTP(host=Config.FTP_ADDRESS, user=Config.FTP_USER, passwd=Config.FTP_PASSWORD)
-    except Exception as e:
-        raise SystemExit(f"ERROR: can't connect to FTP server: {e}.")
-
-    files_list = connection.nlst()
-
-    for source_path in source_paths:
+    async with aioftp.Client.context(Config.FTP_ADDRESS, user=Config.FTP_USER, password=Config.FTP_PASSWORD) as client:
         # Check if the  file is already exists on the server
-        if source_path.name in files_list and not override:
-            connection.close()
+        if await client.exists(source_path.name) and not override:
             raise SystemExit(f"ERROR: <{source_path.name}> already exists on the FTP server. Try using --override.")
-
-        with open(source_path, "rb") as file:
-            if not dry:
-                connection.storlines(f"STOR {source_path.name}", file)
-    connection.close()
+        if not dry:
+            await client.upload(source_path)
 
 
-# def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
+# async def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
 #     pass
 
 
@@ -78,7 +69,7 @@ def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, 
             )
 
 
-def main():
+async def main():
     args = init_args()
 
     start = time.time()
@@ -97,24 +88,28 @@ def main():
     DRY = args.dry
 
     destinations = defaultdict(list)
+    tasks = list()
 
     # Building dict with endpoints as keys
     for source_path, file in zip(source_paths, DESTINATIONS["files"]):
-        if "ftp" in file["endpoints"]:
+        if "ftp" in file["endpoints"]:  # Copying to FTP
+            print(f"sending {source_path.name} to ftp asyncronously")
+            tasks.append(asyncio.create_task(send_to_ftp(source_path, OVERRIDE, DRY)))
             destinations["ftp"].append(source_path)
 
         if "owncloud" in file["endpoints"]:
+            print("append owncloud")
             destinations["owncloud"].append(source_path)
 
         if "folder" in file["endpoints"]:
+            print("append folder")
+            tasks.append(asyncio.create_task(asend_locally(source_path, file, OVERRIDE, DRY)))
             destinations["folder"].append(source_path)
+
+    await asyncio.gather(*tasks)
 
     # Main copying loop
     for key, paths in destinations.items():
-        if key == "ftp":  # Copying to FTP
-            print(f"sending {len(paths)} file(s) to ftp")
-            send_to_ftp(paths, OVERRIDE, DRY)
-
         if key == "owncloud":  # Copying to OwnCloud
             print(f"sending {len(paths)} file(s) to owncloud")
             # send_to_owncloud(paths, OVERRIDE, DRY)
@@ -132,4 +127,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
+
+
+# Добавить обработку более чем трёх файлов
+# Добавить флаг игнорирования файла
+# Добавить флаг игнорирования эндпоинта
+# Добавить копирование папки
