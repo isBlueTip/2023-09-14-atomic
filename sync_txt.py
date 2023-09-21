@@ -1,3 +1,8 @@
+# Добавить обработку более чем трёх файлов
+# Добавить флаг игнорирования файла
+# Добавить флаг игнорирования эндпоинта
+# Добавить копирование папки
+
 import argparse
 import asyncio
 import shutil
@@ -27,12 +32,14 @@ def init_args() -> argparse.Namespace:
 
 
 async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False) -> None:
-    """# TODO check docs and update dockstrings accordingly
-    Sends files from list with source paths to FTP server's root folder.
+    """
+    Send a file from src_path to FTP server's root folder.
+
+    Override flag would override an existing file in a root folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
-    :param source_paths: list of source paths objects
-    :param override: flag to overwrite existing files
+    :param src_path: source path object
+    :param override: flag to overwrite existing file
     :param dry: flag to suppress actual changes in system
     :return:
     """
@@ -51,12 +58,14 @@ async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False)
 
 async def send_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
     """
-    Copy file from source path to local target_path folder.
+    Copy file from src_path to local target_path folder.
+
+    Override flag would override an existing file in a dst_path.
     Dry mode would suppress actual copying but produce actual-like output.
 
-    :param src_path: list of source paths objects
+    :param src_path: source path object
     :param dst_path: destination directory path object
-    :param override: flag to overwrite existing files
+    :param override: flag to overwrite existing file
     :param dry: flag to suppress actual changes in system
     :return:
     """
@@ -129,6 +138,7 @@ async def main():
             print(f"sending {len(paths)} file(s) to owncloud")
             # send_to_owncloud(paths, OVERRIDE, DRY)
 
+        dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
     end = time.time()
     seconds_elapsed = int(round(end - start, 0))
     # seconds_elapsed = end - start
@@ -137,9 +147,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-# Добавить обработку более чем трёх файлов
-# Добавить флаг игнорирования файла
-# Добавить флаг игнорирования эндпоинта
-# Добавить копирование папки
