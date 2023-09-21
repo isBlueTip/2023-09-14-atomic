@@ -6,6 +6,8 @@ from collections import defaultdict
 from ftplib import FTP
 from pathlib import Path
 
+import aiofiles
+import aiofiles.os
 import aioftp
 
 from config import Config
@@ -24,8 +26,8 @@ def init_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def send_to_ftp(source_path: Path, override: bool = False, dry: bool = False) -> None:
-    """
+async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False) -> None:
+    """# TODO check docs and update dockstrings accordingly
     Sends files from list with source paths to FTP server's root folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
@@ -34,42 +36,55 @@ async def send_to_ftp(source_path: Path, override: bool = False, dry: bool = Fal
     :param dry: flag to suppress actual changes in system
     :return:
     """
+
     async with aioftp.Client.context(Config.FTP_ADDRESS, user=Config.FTP_USER, password=Config.FTP_PASSWORD) as client:
         # Check if the  file is already exists on the server
-        if await client.exists(source_path.name) and not override:
-            raise SystemExit(f"ERROR: <{source_path.name}> already exists on the FTP server. Try using --override.")
+        if await client.exists(src_path.name) and not override:
+            raise SystemExit(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
         if not dry:
-            await client.upload(source_path)
+            await client.upload(src_path)
 
 
-# async def send_to_owncloud(source_paths: [Path], override: bool = False, dry: bool = False) -> None:
+# async def send_to_owncloud(src_path: Path, override: bool = False, dry: bool = False) -> None:
 #     pass
 
 
-def send_locally(source_paths: [Path], dest_path: Path, override: bool = False, dry: bool = False) -> None:
+async def send_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
     """
     Copy file from source path to local target_path folder.
     Dry mode would suppress actual copying but produce actual-like output.
 
-    :param source_paths: list of source paths objects
-    :param dest_path: destination directory path object
+    :param src_path: list of source paths objects
+    :param dst_path: destination directory path object
     :param override: flag to overwrite existing files
     :param dry: flag to suppress actual changes in system
     :return:
     """
 
-    for source_path in source_paths:
-        # Check if the file already exists in the destination folder
-        if not dest_path.joinpath(source_path.name).exists() or override:
-            if not dry:
-                shutil.copy(source_path, dest_path)
-        else:
-            raise SystemExit(
-                f"ERROR: <{source_path.name}> already exists in the local target dir. Try using --override."
-            )
+    # Check if the file already exists in the destination folder
+    if not dst_path.exists() or override:
+        dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
+        handle_src = await aiofiles.open(src_path, mode="r")
+        handle_dst = await aiofiles.open(dst_path, mode="w")
+
+        stat_src = await aiofiles.os.stat(src_path)
+        bytes_cnt = stat_src.st_size
+
+        src_descr = handle_src.fileno()
+        dst_descr = handle_dst.fileno()
+
+        if not dry:
+            await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
+
+    else:
+        raise SystemExit(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
 
 
 async def main():
+    # Check if local target dir exists
+    if not Path(Config.LOCAL_TARGET_FOLDER).exists():
+        raise SystemExit("ERROR: local target directory doesn't exist.")
+
     args = init_args()
 
     start = time.time()
@@ -95,16 +110,16 @@ async def main():
         if "ftp" in file["endpoints"]:  # Copying to FTP
             print(f"sending {source_path.name} to ftp asyncronously")
             tasks.append(asyncio.create_task(send_to_ftp(source_path, OVERRIDE, DRY)))
-            destinations["ftp"].append(source_path)
 
         if "owncloud" in file["endpoints"]:
             print("append owncloud")
             destinations["owncloud"].append(source_path)
 
         if "folder" in file["endpoints"]:
-            print("append folder")
-            tasks.append(asyncio.create_task(asend_locally(source_path, file, OVERRIDE, DRY)))
-            destinations["folder"].append(source_path)
+            print(f"sending {source_path.name} to local folder asyncronously")
+            tasks.append(
+                asyncio.create_task(send_locally(source_path, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY))
+            )
 
     await asyncio.gather(*tasks)
 
@@ -114,15 +129,9 @@ async def main():
             print(f"sending {len(paths)} file(s) to owncloud")
             # send_to_owncloud(paths, OVERRIDE, DRY)
 
-        if key == "folder":  # Copying locally
-            # Check if target dir exists
-            if not Path(Config.LOCAL_TARGET_FOLDER).exists():
-                raise SystemExit("ERROR: local target directory doesn't exist.")
-
-            print(f"sending {len(paths)} file(s) locally")
-            send_locally(paths, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY)
-
-    seconds_elapsed = int(round(time.time() - start, 0))
+    end = time.time()
+    seconds_elapsed = int(round(end - start, 0))
+    # seconds_elapsed = end - start
     print(f"SUCCESS: copied {len(destinations)} file(s) in {seconds_elapsed} second(s)")
 
 
