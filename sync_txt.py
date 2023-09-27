@@ -32,7 +32,14 @@ def init_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def copy_to_ftp(src_path: Path, override: bool = False, dry: bool = False) -> None:
+async def copy_to_ftp(
+        src_path: Path,
+        url: str,
+        login: str,
+        password: str,
+        override: bool = False,
+        dry: bool = False
+) -> None:
     """
     Send a file from src_path to FTP server's root folder.
 
@@ -40,20 +47,23 @@ async def copy_to_ftp(src_path: Path, override: bool = False, dry: bool = False)
     Dry mode would suppress actual copying but produce actual-like output.
 
     :param src_path: source path object
+    :param url: FTP server url
+    :param login: FTP login
+    :param password: FTP password
     :param override: flag to overwrite existing file
     :param dry: flag to suppress actual changes in system
     :return:
     """
 
-    print(f"copying {src_path.resolve()} to ftp")
-    print("")
-    async with aioftp.Client.context(Config.FTP_ADDRESS, user=Config.FTP_USER, password=Config.FTP_PASSWORD) as client:
+    print(f"copying {src_path.name} to ftp")
+
+    async with aioftp.Client.context(url, user=login, password=password) as client:
         # Check if the file already exists on the server
         if await client.exists(src_path.name) and not override:
             raise SystemExit(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
         if not dry:
             await client.upload(src_path)
-            print(f"{src_path.resolve()} copied to ftp")
+            print(f"{src_path.name} copied to ftp")
 
 
 async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
@@ -64,15 +74,15 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
     Dry mode would suppress actual copying but produce actual-like output.
 
     :param src_path: source path object
-    :param url:
-    :param password:
+    :param url: owncloud shared folder url
+    :param password: owncloud password for shared folder
     :param override: flag to overwrite existing file
     :param dry: flag to suppress actual changes in system
     :return:
     """
 
     print(f"copying {src_path.name} to owncloud")
-    print("")
+
     # Parse shared dir id and encode it along with password in base64
     token = url.split("/")[-1]
     credentials = f"{token}:{password}"
@@ -105,7 +115,8 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
             resp = await session.put(Config.OWNCLOUD_WEBDAV_ENDPOINT + f"/{src_path.name}", data=file, headers=headers)
             if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
                 print(
-                    f"ERROR: <{resp.status}> HTTP status when copying {src_path.name} to owncloud (<201_CREATED> or <204_NO_CONTENT> expected)"
+                    f"ERROR: <{resp.status}> HTTP status when copying {src_path.name} to owncloud (<201_CREATED> or"
+                    " <204_NO_CONTENT> expected)"
                 )
             else:
                 print(f"{src_path.name} copied to owncloud")
@@ -126,7 +137,7 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
     """
 
     print(f"copying {src_path.name} to {dst_path.resolve()}")
-    print("")
+
     # Check if the file already exists in the destination folder
     if not dst_path.exists() or override:
         dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
@@ -149,7 +160,8 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
 
 async def main():
     # Check if local target dir exists
-    if not Path(Config.LOCAL_TARGET_FOLDER).exists():
+    local_dest_path = Path(Config.LOCAL_TARGET_FOLDER)
+    if not local_dest_path.exists():
         raise SystemExit("ERROR: local target directory doesn't exist.")
 
     args = init_args()
@@ -157,12 +169,12 @@ async def main():
     start = time.perf_counter()
 
     # Building source files paths
-    source_paths = list()
-    source_paths.append(Path(args.path_1 + DESTINATIONS["files"][0]["name"]))
-    source_paths.append(Path(args.path_2 + DESTINATIONS["files"][1]["name"]))
-    source_paths.append(Path(args.path_3 + DESTINATIONS["files"][2]["name"]))
+    src_paths = list()
+    src_paths.append(Path(args.path_1 + DESTINATIONS["files"][0]["name"]))
+    src_paths.append(Path(args.path_2 + DESTINATIONS["files"][1]["name"]))
+    src_paths.append(Path(args.path_3 + DESTINATIONS["files"][2]["name"]))
 
-    for i, path in enumerate(source_paths, start=1):
+    for i, path in enumerate(src_paths, start=1):
         if not path.exists():
             raise SystemExit(f"ERROR: <file{i}> path doesn't exist.")
 
@@ -172,25 +184,30 @@ async def main():
     tasks = list()
 
     # Create copying tasks
-    for source_path, file in zip(source_paths, DESTINATIONS["files"]):
+    for src_path, file in zip(src_paths, DESTINATIONS["files"]):
         if "ftp" in file["endpoints"]:  # Copying to FTP
-            tasks.append(asyncio.create_task(copy_to_ftp(source_path, OVERRIDE, DRY)))
+            tasks.append(asyncio.create_task(copy_to_ftp(
+                src_path,
+                Config.FTP_ADDRESS,
+                Config.FTP_USER,
+                Config.FTP_PASSWORD,
+                OVERRIDE,
+                DRY)
+            )
+            )
 
         if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
-            tasks.append(copy_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
+            tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
 
         if "folder" in file["endpoints"]:  # Copying locally
-            tasks.append(
-                asyncio.create_task(copy_locally(source_path, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY))
-            )
+            tasks.append(asyncio.create_task(copy_locally(src_path, local_dest_path, OVERRIDE, DRY)))
 
     await asyncio.gather(*tasks)
 
-    # dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
     end = time.perf_counter()
     # seconds_elapsed = int(round(end - start, 0))
     seconds_elapsed = end - start
-    print(f"SUCCESS: copied {len(source_paths)} file(s) in {seconds_elapsed} second(s)")
+    print(f"SUCCESS: copied {len(src_paths)} file(s) in {seconds_elapsed} second(s)")
 
 
 if __name__ == "__main__":
