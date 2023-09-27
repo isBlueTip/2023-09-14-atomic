@@ -60,7 +60,8 @@ async def copy_to_ftp(
     async with aioftp.Client.context(url, user=login, password=password) as client:
         # Check if the file already exists on the server
         if await client.exists(src_path.name) and not override:
-            raise SystemExit(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
+            print(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
+            return
         if not dry:
             await client.upload(src_path)
             print(f"{src_path.name} copied to ftp")
@@ -100,15 +101,15 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
             if resp.status != http.HTTPStatus.MULTI_STATUS:
                 print(f"ERROR: <{resp.status}> HTTP status when connecting to owncloud (<207_MULTI_STATUS> expected)")
                 return
+
             content = await resp.read()
             xml_root = ElementTree.fromstring(content)
 
             for elem in xml_root.iter("{DAV:}response"):
                 path = elem.find("{DAV:}href").text
                 if path.endswith(src_path.name) and not override:
-                    raise SystemExit(
-                        f"ERROR: <{src_path.name}> already exists on the OwnCloud server. Try using --override."
-                    )
+                    print(f"ERROR: <{src_path.name}> already exists on the OwnCloud server. Try using --override.")
+                    return
 
         file = open(src_path, "rb").read()
         if not dry:
@@ -118,8 +119,8 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
                     f"ERROR: <{resp.status}> HTTP status when copying {src_path.name} to owncloud (<201_CREATED> or"
                     " <204_NO_CONTENT> expected)"
                 )
-            else:
-                print(f"{src_path.name} copied to owncloud")
+                return
+        print(f"{src_path.name} copied to owncloud")
 
 
 async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
@@ -155,7 +156,7 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
             print(f"{src_path.name} copied to {dst_path.resolve()}")
 
     else:
-        raise SystemExit(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
+        print(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
 
 
 async def main():
@@ -205,9 +206,9 @@ async def main():
     await asyncio.gather(*tasks)
 
     end = time.perf_counter()
-    # seconds_elapsed = int(round(end - start, 0))
-    seconds_elapsed = end - start
-    print(f"SUCCESS: copied {len(src_paths)} file(s) in {seconds_elapsed} second(s)")
+    seconds_elapsed = int(round(end - start, 0))
+    if not DRY:
+        print(f"SUCCESS: copied {len(src_paths)} file(s) in {seconds_elapsed} second(s)")
 
 
 if __name__ == "__main__":
