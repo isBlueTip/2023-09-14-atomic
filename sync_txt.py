@@ -2,6 +2,7 @@
 # Добавить флаг игнорирования файла
 # Добавить флаг игнорирования эндпоинта
 # Добавить копирование папки
+# Есть что оптимизировать при увеличении количества копируемых файлов
 
 # TODO Убрать .env и fuxtures с прода. Оставил для более простой проверки тестового
 
@@ -57,7 +58,7 @@ async def copy_to_ftp(
     :return:
     """
 
-    print(f"copying {src_path.name} to ftp")
+    print(f"copying <{src_path.name}> to ftp")
 
     async with aioftp.Client.context(url, user=login, password=password) as client:
         # Check if the file already exists on the server
@@ -66,7 +67,7 @@ async def copy_to_ftp(
             return
         if not dry:
             await client.upload(src_path)
-            print(f"{src_path.name} copied to ftp")
+        print(f"SUCCESS: <{src_path.name}> copied to ftp")
 
 
 async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
@@ -84,7 +85,7 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
     :return:
     """
 
-    print(f"copying {src_path.name} to owncloud")
+    print(f"copying <{src_path.name}> to owncloud")
 
     # Parse shared dir id and encode it along with password in base64
     token = url.split("/")[-1]
@@ -115,14 +116,14 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
 
         file = open(src_path, "rb").read()
         if not dry:
-            resp = await session.put(Config.OWNCLOUD_WEBDAV_ENDPOINT + f"/{src_path.name}", data=file, headers=headers)
+            resp = await session.put(f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers)
             if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
                 print(
-                    f"ERROR: <{resp.status}> HTTP status when copying {src_path.name} to owncloud (<201_CREATED> or"
+                    f"ERROR: <{resp.status}> HTTP status when copying <{src_path.name}> to owncloud (<201_CREATED> or"
                     " <204_NO_CONTENT> expected)"
                 )
                 return
-        print(f"{src_path.name} copied to owncloud")
+        print(f"SUCCESS: <{src_path.name}> copied to owncloud")
 
 
 async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
@@ -139,7 +140,7 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
     :return:
     """
 
-    print(f"copying {src_path.name} to {dst_path.resolve()}")
+    print(f"copying <{src_path.name}> to {dst_path.resolve()}")
 
     # Check if the file already exists in the destination folder
     if not dst_path.exists() or override:
@@ -155,7 +156,7 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
 
         if not dry:
             await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
-            print(f"{src_path.name} copied to {dst_path.resolve()}")
+        print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
 
     else:
         print(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
@@ -210,7 +211,7 @@ async def main():
     end = time.perf_counter()
     seconds_elapsed = int(round(end - start, 0))
     if not DRY:
-        print(f"SUCCESS: copied {len(src_paths)} file(s) in {seconds_elapsed} second(s)")
+        print(f"\nSUCCESS: copied in {seconds_elapsed} second(s)")
 
 
 if __name__ == "__main__":
