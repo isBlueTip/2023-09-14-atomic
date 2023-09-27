@@ -7,22 +7,12 @@ import argparse
 import asyncio
 import base64
 import http
-
-# import inspect
-# import os
-# import shutil
 import time
-
-# from collections import defaultdict
-# from ftplib import FTP
 from pathlib import Path
-
-# from pprint import pprint
 from xml.etree import ElementTree
 
 import aiofiles
-
-# import aiofiles.os
+import aiofiles.os
 import aioftp
 import aiohttp
 
@@ -42,7 +32,7 @@ def init_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False) -> None:
+async def copy_to_ftp(src_path: Path, override: bool = False, dry: bool = False) -> None:
     """
     Send a file from src_path to FTP server's root folder.
 
@@ -55,15 +45,34 @@ async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False)
     :return:
     """
 
+    print(f"copying {src_path.resolve()} to ftp")
+    print("")
     async with aioftp.Client.context(Config.FTP_ADDRESS, user=Config.FTP_USER, password=Config.FTP_PASSWORD) as client:
-        # Check if the  file is already exists on the server
+        # Check if the file already exists on the server
         if await client.exists(src_path.name) and not override:
             raise SystemExit(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
         if not dry:
             await client.upload(src_path)
+            print(f"{src_path.resolve()} copied to ftp")
 
 
-async def send_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
+async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
+    """
+    Send a file from src_path to OwnCloud server's root shared folder.
+
+    Override flag would override an existing file in a root folder.
+    Dry mode would suppress actual copying but produce actual-like output.
+
+    :param src_path: source path object
+    :param url:
+    :param password:
+    :param override: flag to overwrite existing file
+    :param dry: flag to suppress actual changes in system
+    :return:
+    """
+
+    print(f"copying {src_path.name} to owncloud")
+    print("")
     # Parse shared dir id and encode it along with password in base64
     token = url.split("/")[-1]
     credentials = f"{token}:{password}"
@@ -76,9 +85,11 @@ async def send_to_owncloud(src_path: Path, url: str, password: str, override: bo
     }
 
     async with aiohttp.ClientSession() as session:
-        # Check if the  file is already exists on the server
+        # Check if the file already exists on the server
         async with session.request("PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers) as resp:
-            print(f"PROPFIND resp.status = {resp.status}")
+            if resp.status != http.HTTPStatus.MULTI_STATUS:
+                print(f"ERROR: <{resp.status}> HTTP status when connecting to owncloud (<207_MULTI_STATUS> expected)")
+                return
             content = await resp.read()
             xml_root = ElementTree.fromstring(content)
 
@@ -92,13 +103,15 @@ async def send_to_owncloud(src_path: Path, url: str, password: str, override: bo
         file = open(src_path, "rb").read()
         if not dry:
             resp = await session.put(Config.OWNCLOUD_WEBDAV_ENDPOINT + f"/{src_path.name}", data=file, headers=headers)
-            print(resp.status)
             if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
-                # ERROR
-                pass
+                print(
+                    f"ERROR: <{resp.status}> HTTP status when copying {src_path.name} to owncloud (<201_CREATED> or <204_NO_CONTENT> expected)"
+                )
+            else:
+                print(f"{src_path.name} copied to owncloud")
 
 
-async def send_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
+async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
     """
     Copy file from src_path to local target_path folder.
 
@@ -112,6 +125,8 @@ async def send_locally(src_path: Path, dst_path: Path, override: bool = False, d
     :return:
     """
 
+    print(f"copying {src_path.name} to {dst_path.resolve()}")
+    print("")
     # Check if the file already exists in the destination folder
     if not dst_path.exists() or override:
         dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
@@ -126,6 +141,7 @@ async def send_locally(src_path: Path, dst_path: Path, override: bool = False, d
 
         if not dry:
             await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
+            print(f"{src_path.name} copied to {dst_path.resolve()}")
 
     else:
         raise SystemExit(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
@@ -157,19 +173,16 @@ async def main():
 
     # Create copying tasks
     for source_path, file in zip(source_paths, DESTINATIONS["files"]):
-        # if "ftp" in file["endpoints"]:  # Copying to FTP
-        #     print(f"sending {source_path.name} to ftp asyncronously")
-        #     tasks.append(asyncio.create_task(send_to_ftp(source_path, OVERRIDE, DRY)))
+        if "ftp" in file["endpoints"]:  # Copying to FTP
+            tasks.append(asyncio.create_task(copy_to_ftp(source_path, OVERRIDE, DRY)))
 
-        if "owncloud" in file["endpoints"]:
-            print(f"sending {source_path.name} to owncloud asyncronously")
-            tasks.append(send_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
+        if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
+            tasks.append(copy_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
 
-        # if "folder" in file["endpoints"]:
-        #     print(f"sending {source_path.name} to local folder asyncronously")
-        #     tasks.append(
-        #         asyncio.create_task(send_locally(source_path, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY))
-        #     )
+        if "folder" in file["endpoints"]:  # Copying locally
+            tasks.append(
+                asyncio.create_task(copy_locally(source_path, Path(Config.LOCAL_TARGET_FOLDER), OVERRIDE, DRY))
+            )
 
     await asyncio.gather(*tasks)
 
