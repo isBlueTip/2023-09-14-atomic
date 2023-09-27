@@ -12,7 +12,7 @@ class Config:
 
     OWNCLOUD_URL = os.getenv("OWNCLOUD_URL", "https://fs.automiq.ru/owncloud/index.php/")
     OWNCLOUD_PASSWORD = os.getenv("OWNCLOUD_PASSWORD", "_xxx_aaa11")
-    OWNCLOUD_WEBDAV_ENDPOINT = os.getenv("OWNCLOUD_WEBDAV_ENDPOINT", "https://fs.automiq.ru/owncloud/index.php/")
+    OWNCLOUD_WEBDAV_ENDPOINT = os.getenv("OWNCLOUD_WEBDAV_ENDPOINT", "https://fs.automiq.ru/owncloud/public.php/webdav/")
 
     OWNCLOUD_TARGET_FOLDER = os.getenv("OWNCLOUD_TARGET_FOLDER", "/tmp/xxxx-123321/")
 
