@@ -6,22 +6,25 @@
 import argparse
 import asyncio
 import base64
-import inspect
-import os
-import shutil
+import http
+
+# import inspect
+# import os
+# import shutil
 import time
-from collections import defaultdict
-from ftplib import FTP
+
+# from collections import defaultdict
+# from ftplib import FTP
 from pathlib import Path
-from pprint import pprint
+
+# from pprint import pprint
 from xml.etree import ElementTree
 
 import aiofiles
-import aiofiles.os
+
+# import aiofiles.os
 import aioftp
 import aiohttp
-import ipdb
-import requests
 
 from config import Config
 from constants import DESTINATIONS
@@ -60,7 +63,7 @@ async def send_to_ftp(src_path: Path, override: bool = False, dry: bool = False)
             await client.upload(src_path)
 
 
-async def asend_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
+async def send_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
     # Parse shared dir id and encode it along with password in base64
     token = url.split("/")[-1]
     credentials = f"{token}:{password}"
@@ -69,58 +72,30 @@ async def asend_to_owncloud(src_path: Path, url: str, password: str, override: b
     headers = {
         "Depth": "1",
         "Authorization": f"Basic {credentials_encoded}",
+        "Content-Type": "text/html",
     }
 
-    # session = requests.Session()
-    # resp = session.request('PROPFIND', Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers)
-    # xml_data = resp.content
-    # xml_root = ElementTree.fromstring(xml_data)
-
     async with aiohttp.ClientSession() as session:
+        # Check if the  file is already exists on the server
         async with session.request("PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers) as resp:
-            print(f"resp.status = {resp.status}")
+            print(f"PROPFIND resp.status = {resp.status}")
             content = await resp.read()
-            xml_data = content
-            xml_root = ElementTree.fromstring(xml_data)
-            print(content)
+            xml_root = ElementTree.fromstring(content)
 
             for elem in xml_root.iter("{DAV:}response"):
                 path = elem.find("{DAV:}href").text
-                print(f"path = {path}")
-                if path.endswith(src_path.name):
-                    print(f"The file '{file_name}' exists in the folder.")
-                    break
+                if path.endswith(src_path.name) and not override:
+                    raise SystemExit(
+                        f"ERROR: <{src_path.name}> already exists on the OwnCloud server. Try using --override."
+                    )
 
-    return
-    # print(f"resp.text = {resp.text}")
-    # print("")
-
-    #     files = {'file': open(file_path, 'rb')}
-    #     # response = requests.post(url, data={'password': Config.OWNCLOUD_PASSWORD})
-
-
-def send_to_owncloud(src_path, url, password, override: bool = False, dry: bool = False):
-    # Parse shared dir id and encode it along with password in base64
-    token = url.split("/")[-1]
-    credentials = f"{token}:{password}"
-    credentials_encoded = base64.b64encode(credentials.encode()).decode()
-
-    headers = {
-        "Depth": "1",
-        "Authorization": f"Basic {credentials_encoded}",
-    }
-
-    session = requests.Session()
-    resp = session.request("PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers)
-    xml_data = resp.content
-    xml_root = ElementTree.fromstring(xml_data)
-
-    for elem in xml_root.iter("{DAV:}response"):
-        path = elem.find("{DAV:}href").text
-        print(f"path = {path}")
-        if path.endswith(src_path.name):
-            print(f"The file '{file_name}' exists in the folder.")
-            break
+        file = open(src_path, "rb").read()
+        if not dry:
+            resp = await session.put(Config.OWNCLOUD_WEBDAV_ENDPOINT + f"/{src_path.name}", data=file, headers=headers)
+            print(resp.status)
+            if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
+                # ERROR
+                pass
 
 
 async def send_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
@@ -178,10 +153,9 @@ async def main():
     OVERRIDE = args.override
     DRY = args.dry
 
-    destinations = defaultdict(list)
     tasks = list()
 
-    # Building dict with endpoints as keys
+    # Create copying tasks
     for source_path, file in zip(source_paths, DESTINATIONS["files"]):
         # if "ftp" in file["endpoints"]:  # Copying to FTP
         #     print(f"sending {source_path.name} to ftp asyncronously")
@@ -189,8 +163,7 @@ async def main():
 
         if "owncloud" in file["endpoints"]:
             print(f"sending {source_path.name} to owncloud asyncronously")
-            tasks.append(asend_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
-            # send_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY)
+            tasks.append(send_to_owncloud(source_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
 
         # if "folder" in file["endpoints"]:
         #     print(f"sending {source_path.name} to local folder asyncronously")
@@ -204,7 +177,7 @@ async def main():
     end = time.perf_counter()
     # seconds_elapsed = int(round(end - start, 0))
     seconds_elapsed = end - start
-    print(f"SUCCESS: copied {len(destinations)} file(s) in {seconds_elapsed} second(s)")
+    print(f"SUCCESS: copied {len(source_paths)} file(s) in {seconds_elapsed} second(s)")
 
 
 if __name__ == "__main__":
