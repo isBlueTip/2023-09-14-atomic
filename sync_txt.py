@@ -4,12 +4,15 @@
 # Добавить копирование папки
 # Есть что оптимизировать и куда вносить изменения при увеличении количества копируемых файлов
 
+# Для работы с эндпоинтами выбрал самые популярные и поддерживаемые библиотеки
+
 # TODO Убрать .env и fuxtures с прода. Оставил для более простой проверки тестового
 
 import argparse
 import asyncio
 import base64
 import http
+import sys
 import time
 from pathlib import Path
 from xml.etree import ElementTree
@@ -68,7 +71,11 @@ async def copy_to_ftp(
 
         # Copy if not dry mode
         if not dry:
-            await client.upload(src_path)
+            try:
+                await client.upload(src_path)
+            except Exception as e:
+                print(f"ERROR: <{e}> when copying <{src_path.name}> to ftp")
+                return
         print(f"SUCCESS: <{src_path.name}> copied to ftp")
 
 
@@ -119,7 +126,11 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
         # Copy if not dry mode
         if not dry:
             file = open(src_path, "rb").read()
-            resp = await session.put(f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers)
+            try:
+                resp = await session.put(f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers)
+            except Exception as e:
+                print(f"ERROR: <{e}> when copying <{src_path.name}> to owncloud")
+                return
             if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
                 print(
                     f"ERROR: <{resp.status}> HTTP status when copying <{src_path.name}> to owncloud (<201_CREATED> or"
@@ -149,17 +160,21 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
     if not dst_path.exists() or override:
         # Copy if not dry mode
         if not dry:
-            dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
-            handle_src = await aiofiles.open(src_path, mode="r")
-            handle_dst = await aiofiles.open(dst_path, mode="w")
+            try:
+                dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
+                handle_src = await aiofiles.open(src_path, mode="r")
+                handle_dst = await aiofiles.open(dst_path, mode="w")
 
-            stat_src = await aiofiles.os.stat(src_path)
-            bytes_cnt = stat_src.st_size
+                stat_src = await aiofiles.os.stat(src_path)
+                bytes_cnt = stat_src.st_size
 
-            src_descr = handle_src.fileno()
-            dst_descr = handle_dst.fileno()
+                src_descr = handle_src.fileno()
+                dst_descr = handle_dst.fileno()
 
-            await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
+                await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
+            except Exception as e:
+                print(f"ERROR: <{e}> when copying <{src_path.name}> to {dst_path.resolve()}")
+                return
         print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
 
     else:
@@ -167,6 +182,8 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
 
 
 async def main():
+    assert sys.version_info >= (3, 7), "Python >= 3.7 is required"
+
     # Check if local target dir exists
     local_dest_path = Path(Config.LOCAL_TARGET_FOLDER)
     if not local_dest_path.exists():
