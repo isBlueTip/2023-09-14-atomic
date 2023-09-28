@@ -26,9 +26,9 @@ from constants import DESTINATIONS
 def init_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("path_1")
-    parser.add_argument("path_2")
-    parser.add_argument("path_3")
+    parser.add_argument("dir_1")
+    parser.add_argument("dir_2")
+    parser.add_argument("dir_3")
     parser.add_argument("-o", "--override", action="store_true")
     parser.add_argument("-d", "--dry", action="store_true")
 
@@ -65,6 +65,8 @@ async def copy_to_ftp(
         if await client.exists(src_path.name) and not override:
             print(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
             return
+
+        # Copy if not dry mode
         if not dry:
             await client.upload(src_path)
         print(f"SUCCESS: <{src_path.name}> copied to ftp")
@@ -114,8 +116,9 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
                     print(f"ERROR: <{src_path.name}> already exists on the OwnCloud server. Try using --override.")
                     return
 
-        file = open(src_path, "rb").read()
+        # Copy if not dry mode
         if not dry:
+            file = open(src_path, "rb").read()
             resp = await session.put(f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers)
             if resp.status not in (http.HTTPStatus.NO_CONTENT, http.HTTPStatus.CREATED):
                 print(
@@ -144,17 +147,18 @@ async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, d
 
     # Check if the file already exists in the destination folder
     if not dst_path.exists() or override:
-        dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
-        handle_src = await aiofiles.open(src_path, mode="r")
-        handle_dst = await aiofiles.open(dst_path, mode="w")
-
-        stat_src = await aiofiles.os.stat(src_path)
-        bytes_cnt = stat_src.st_size
-
-        src_descr = handle_src.fileno()
-        dst_descr = handle_dst.fileno()
-
+        # Copy if not dry mode
         if not dry:
+            dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
+            handle_src = await aiofiles.open(src_path, mode="r")
+            handle_dst = await aiofiles.open(dst_path, mode="w")
+
+            stat_src = await aiofiles.os.stat(src_path)
+            bytes_cnt = stat_src.st_size
+
+            src_descr = handle_src.fileno()
+            dst_descr = handle_dst.fileno()
+
             await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
         print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
 
@@ -174,9 +178,9 @@ async def main():
 
     # Building source files paths
     src_paths = list()
-    src_paths.append(Path(args.path_1 + DESTINATIONS["files"][0]["name"]))
-    src_paths.append(Path(args.path_2 + DESTINATIONS["files"][1]["name"]))
-    src_paths.append(Path(args.path_3 + DESTINATIONS["files"][2]["name"]))
+    src_paths.append(Path(args.dir_1 + DESTINATIONS["files"][0]["name"]))
+    src_paths.append(Path(args.dir_2 + DESTINATIONS["files"][1]["name"]))
+    src_paths.append(Path(args.dir_3 + DESTINATIONS["files"][2]["name"]))
 
     for i, path in enumerate(src_paths, start=1):
         if not path.exists():
