@@ -14,8 +14,6 @@ import sys
 import time
 from pathlib import Path
 
-from ipdb import set_trace
-
 from config import Config
 from connections import FTPConnection, LocalConnection, OwnCloudConnection
 from constants import DESTINATIONS

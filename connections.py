@@ -1,28 +1,16 @@
-import asyncio
 import base64
 import http
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 from xml.etree import ElementTree
 
 import aiofiles
 import aiofiles.os
 import aioftp
 import aiohttp
-from ipdb import set_trace
 
 from config import Config
-
-
-class FileOperation:  # todo
-    def __init__(self, override: bool = False, dry: bool = False):
-        self.override: override
-        self.dry: dry
-
-    def copy(self):
-        pass
 
 
 class Connection(ABC):
@@ -56,28 +44,28 @@ class LocalConnection(Connection):
         dry: bool = False,
     ) -> None:
         """
-        Copy file from src_path to local dst_path directory.
+        Копирует файл из src_path в локальную папку dst_path.
 
-        Override flag would override an existing file in a dst_path.
-        Dry mode would suppress actual copying but produce actual-like output.
+        Флаг override позволяет перезаписать существующий файл в dst_path.
+        Флаг dry отключает фактическое копирование.
 
-        :param src_path: source path object
-        :param dst_path: destination directory path object
-        :param override: flag to overwrite existing file
-        :param dry: flag to suppress actual changes in system
+        :param src_path: Объект пути к источнику.
+        :param dst_path: Объект пути к каталогу назначения.
+        :param override: Флаг для перезаписи существующего файла.
+        :param dry: Флаг для отключения фактических изменений в системе.
         :return:
         """
 
-        print(f"copying <{src_path.name}> to {dst_path.resolve()}")
+        print(f"копирование <{src_path.name}> в {dst_path.resolve()}")
 
-        # Add filename to a folder path
+        # Добавление имени файла к объекту пути папки
         dst_path = dst_path.joinpath(src_path.name)
 
-        # Check if the file already exists in the destination folder
+        # Проверка, существует ли файл уже в папке назначения
         if not dst_path.exists() or override:
-            # Copy if not dry mode
+            # Копирование, если не в режиме dry
             if not dry:
-                try:  # Replace target dir with file
+                try:
                     handle_src = await aiofiles.open(src_path, mode="r")
                     handle_dst = await aiofiles.open(dst_path, mode="w")
 
@@ -92,27 +80,29 @@ class LocalConnection(Connection):
                     )
                 except Exception as e:
                     print(
-                        f"ERROR: <{e}> when copying <{src_path.name}> to"
+                        f"ОШИБКА: <{e}> при копировании <{src_path.name}> в"
                         f" {dst_path.resolve()}"
                     )
                     return
-            print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
+            print(
+                f"УСПЕХ: <{src_path.name}> скопирован в {dst_path.resolve()}"
+            )
 
         else:
             print(
-                f"ERROR: <{src_path.name}> already exists in the local target"
-                " dir. Try using --override."
+                f"ОШИБКА: <{src_path.name}> уже существует в локальной целевой"
+                " папке. Попробуйте использовать --override."
             )
 
 
 class FTPConnection(Connection):
     def __init__(self, url: str, login: str, password: str):
         """
-        Init new ftp connection
+        Инициализация нового подключения FTP.
 
-        :param url:
-        :param login:
-        :param password:
+        :param url: URL для подключения.
+        :param login: Имя пользователя для входа.
+        :param password: Пароль для входа.
         """
 
         self.url = url
@@ -120,9 +110,9 @@ class FTPConnection(Connection):
         self.password = password
 
     @asynccontextmanager
-    async def connect(self):
+    async def connect(self) -> aioftp.Client:
         """
-        Return an aioftp client instance to use as a context manager
+        Возвращает экземпляр клиента aioftp для использования в качестве контекстного менеджера.
 
         :return:
         """
@@ -140,40 +130,41 @@ class FTPConnection(Connection):
         dry: bool = False,
     ):
         """
-        Copy a file from src_path to FTP server's root folder.
+        Копирует файл из src_path в корневую папку сервера FTP.
 
-        dst_path is not used in this version of ftp copying
-        Override flag would override an existing file in a root folder.
-        Dry mode would suppress actual copying but produce actual-like output.
+        Параметр dst_path не используется в этой версии метода.
+        Флаг override позволяет перезаписать существующий файл в корневой папке.
+        Флаг dry отключает фактическое копирование.
 
-        :param src_path: source path object
-        :param dst_path: destination path object
-        :param override: flag to overwrite existing file
-        :param dry: flag to suppress actual changes in system
+        :param src_path: Объект пути источника.
+        :param dst_path: Объект пути назначения.
+        :param override: Флаг для перезаписи существующего файла.
+        :param dry: Флаг для отключения фактических изменений в системе.
         :return:
         """
 
-        print(f"copying <{src_path.name}> to ftp")
+        print(f"копирование <{src_path.name}> на FTP")
 
         async with self.connect() as client:
-            # Check if the file already exists on the server
+            # Проверка, существует ли файл уже на сервере
             if await client.exists(src_path.name) and not override:
                 print(
-                    f"ERROR: <{src_path.name}> already exists on the FTP"
-                    " server. Try using --override."
+                    f"ОШИБКА: <{src_path.name}> уже существует на сервере FTP."
+                    " Попробуйте использовать --override."
                 )
                 return
 
-            # Copy if not dry mode
+            # Копирование, если не в режиме dry
             if not dry:
                 try:
                     await client.upload(src_path)
                 except Exception as e:
                     print(
-                        f"ERROR: <{e}> when copying <{src_path.name}> to ftp"
+                        f"ОШИБКА: <{e}> при копировании <{src_path.name}>"
+                        " на FTP"
                     )
                     return
-            print(f"SUCCESS: <{src_path.name}> copied to ftp")
+            print(f"УСПЕХ: <{src_path.name}> скопирован на FTP")
 
 
 class OwnCloudConnection(Connection):
@@ -181,25 +172,25 @@ class OwnCloudConnection(Connection):
 
     def __init__(self, url: str, password: str):
         """
-        Init new OwnCloud connection
+        Инициализация нового подключения OwnCloud.
 
-        :param url:
-        :param password:
+        :param url: OwnCloud URL.
+        :param password: Пароль OwnCloud.
         """
 
         self.url = url
         self.password = password
 
     @classmethod
-    def get_session(cls):
+    def get_session(cls) -> aiohttp.ClientSession:
         if cls._session is None:
             cls._session = aiohttp.ClientSession()
         return cls._session
 
     @asynccontextmanager
-    async def connect(self):
+    async def connect(self) -> aiohttp.ClientSession:
         """
-        Return an OwnCLoud client instance to use as a context manager
+        Возвращает экземпляр клиента OwnCloud для использования в качестве контекстного менеджера.
 
         :return:
         """
@@ -216,22 +207,22 @@ class OwnCloudConnection(Connection):
         dry: bool = False,
     ):
         """
-        Send a file from src_path to OwnCloud server's root shared folder.
+        Отправляет файл из src_path в общую корневую папку сервера OwnCloud.
 
-        Override flag would override an existing file in a root folder.
-        Dry mode would suppress actual copying but produce actual-like output.
+        Параметр dst_path не используется в этой версии метода.
+        Флаг override позволяет перезаписать существующий файл в корневой папке.
+        Флаг dry отключает фактическое копирование.
 
-        :param src_path: source path object
-        :param url: owncloud shared folder url
-        :param password: owncloud password for shared folder
-        :param override: flag to overwrite existing file
-        :param dry: flag to suppress actual changes in system
+        :param src_path: Объект пути источника.
+        :param dst_path: Объект пути назначения.
+        :param override: Флаг для перезаписи существующего файла.
+        :param dry: Флаг для отключения фактических изменений в системе.
         :return:
         """
 
-        print(f"copying <{src_path.name}> to owncloud")
+        print(f"копирование <{src_path.name}> в OwnCloud")
 
-        # Parse shared dir id and encode it along with password in base64
+        # Парсинг идентификатора общей папки и кодирование его вместе с паролем в base64
         token = self.url.split("/")[-1]
         credentials = f"{token}:{self.password}"
         credentials_encoded = base64.b64encode(credentials.encode()).decode()
@@ -242,16 +233,15 @@ class OwnCloudConnection(Connection):
             "Content-Type": "text/html",
         }
 
-        # async with aiohttp.ClientSession() as session:
         async with self.connect() as session:
-            # # Check if the file already exists on the server
+            # Проверка, если файл уже на сервере
             async with session.request(
                 "PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers
             ) as resp:
                 if resp.status != http.HTTPStatus.MULTI_STATUS:
                     print(
-                        f"ERROR: <{resp.status}> HTTP status when connecting"
-                        " to owncloud (<207_MULTI_STATUS> expected)"
+                        f"ОШИБКА: <{resp.status}> HTTP-статус при подключении"
+                        " к OwnCloud (ожидается <207_MULTI_STATUS>)"
                     )
                     return
 
@@ -262,12 +252,13 @@ class OwnCloudConnection(Connection):
                     path = elem.find("{DAV:}href").text
                     if path.endswith(src_path.name) and not override:
                         print(
-                            f"ERROR: <{src_path.name}> already exists on the"
-                            " OwnCloud server. Try using --override."
+                            f"ОШИБКА: <{src_path.name}> уже существует на"
+                            " сервере OwnCloud. Попробуйте использовать"
+                            " --override."
                         )
                         return
 
-            # Copy if not dry mode
+            # Копирование, если не в режиме dry
             if not dry:
                 file = open(src_path, "rb").read()
                 try:
@@ -278,8 +269,8 @@ class OwnCloudConnection(Connection):
                     )
                 except Exception as e:
                     print(
-                        f"ERROR: <{e}> when copying <{src_path.name}> to"
-                        " owncloud"
+                        f"ОШИБКА: <{e}> при копировании <{src_path.name}> в"
+                        " OwnCloud"
                     )
                     return
                 if resp.status not in (
@@ -287,9 +278,9 @@ class OwnCloudConnection(Connection):
                     http.HTTPStatus.CREATED,
                 ):
                     print(
-                        f"ERROR: <{resp.status}> HTTP status when copying"
-                        f" <{src_path.name}> to owncloud (<201_CREATED> or"
-                        " <204_NO_CONTENT> expected)"
+                        f"ОШИБКА: <{resp.status}> HTTP-статус при копировании"
+                        f" <{src_path.name}> в OwnCloud (ожидается"
+                        " <201_CREATED> или <204_NO_CONTENT>)"
                     )
                     return
-            print(f"SUCCESS: <{src_path.name}> copied to owncloud")
+            print(f"УСПЕХ: <{src_path.name}> скопирован в OwnCloud")
