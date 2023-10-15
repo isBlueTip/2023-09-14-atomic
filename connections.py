@@ -168,8 +168,6 @@ class FTPConnection(Connection):
 
 
 class OwnCloudConnection(Connection):
-    _session = None
-
     def __init__(self, url: str, password: str):
         """
         Инициализация нового подключения OwnCloud.
@@ -181,12 +179,6 @@ class OwnCloudConnection(Connection):
         self.url = url
         self.password = password
 
-    @classmethod
-    def get_session(cls) -> aiohttp.ClientSession:
-        if cls._session is None:
-            cls._session = aiohttp.ClientSession()
-        return cls._session
-
     @asynccontextmanager
     async def connect(self) -> aiohttp.ClientSession:
         """
@@ -195,9 +187,23 @@ class OwnCloudConnection(Connection):
         :return:
         """
 
-        session = self.get_session()
+        # Парсинг идентификатора общей папки и кодирование его вместе с паролем в base64
+        token = self.url.split("/")[-1]
+        credentials = f"{token}:{self.password}"
+        credentials_encoded = base64.b64encode(credentials.encode()).decode()
 
-        yield session
+        headers = {
+            "Depth": "1",
+            "Authorization": f"Basic {credentials_encoded}",
+            "Content-Type": "text/html",
+        }
+
+        session = aiohttp.ClientSession(headers=headers)
+
+        try:
+            yield session
+        finally:
+            await session.close()
 
     async def copy_file(
         self,
@@ -222,41 +228,30 @@ class OwnCloudConnection(Connection):
 
         print(f"копирование <{src_path.name}> в OwnCloud")
 
-        # Парсинг идентификатора общей папки и кодирование его вместе с паролем в base64
-        token = self.url.split("/")[-1]
-        credentials = f"{token}:{self.password}"
-        credentials_encoded = base64.b64encode(credentials.encode()).decode()
-
-        headers = {
-            "Depth": "1",
-            "Authorization": f"Basic {credentials_encoded}",
-            "Content-Type": "text/html",
-        }
-
         async with self.connect() as session:
             # Проверка, если файл уже на сервере
-            async with session.request(
-                "PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers
-            ) as resp:
-                if resp.status != http.HTTPStatus.MULTI_STATUS:
+            resp = await session.request(
+                "PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT
+            )
+            if resp.status != http.HTTPStatus.MULTI_STATUS:
+                print(
+                    f"ОШИБКА: <{resp.status}> HTTP-статус при подключении"
+                    " к OwnCloud (ожидается <207_MULTI_STATUS>)"
+                )
+                return
+
+            content = await resp.read()
+            xml_root = ElementTree.fromstring(content)
+
+            for elem in xml_root.iter("{DAV:}response"):
+                path = elem.find("{DAV:}href").text
+                if path.endswith(src_path.name) and not override:
                     print(
-                        f"ОШИБКА: <{resp.status}> HTTP-статус при подключении"
-                        " к OwnCloud (ожидается <207_MULTI_STATUS>)"
+                        f"ОШИБКА: <{src_path.name}> уже существует на"
+                        " сервере OwnCloud. Попробуйте использовать"
+                        " --override."
                     )
                     return
-
-                content = await resp.read()
-                xml_root = ElementTree.fromstring(content)
-
-                for elem in xml_root.iter("{DAV:}response"):
-                    path = elem.find("{DAV:}href").text
-                    if path.endswith(src_path.name) and not override:
-                        print(
-                            f"ОШИБКА: <{src_path.name}> уже существует на"
-                            " сервере OwnCloud. Попробуйте использовать"
-                            " --override."
-                        )
-                        return
 
             # Копирование, если не в режиме dry
             if not dry:
@@ -265,7 +260,6 @@ class OwnCloudConnection(Connection):
                     resp = await session.put(
                         f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}",
                         data=file,
-                        headers=headers,
                     )
                 except Exception as e:
                     print(
