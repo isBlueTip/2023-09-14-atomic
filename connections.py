@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiofiles
@@ -30,7 +30,13 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    def copy_files(self, src_path: Path, dst_path: Path, override: bool = False, dry: bool = False):
+    def copy_files(
+        self,
+        src_path: Path,
+        dst_path: Path,
+        override: bool = False,
+        dry: bool = False,
+    ):
         pass
 
 
@@ -41,7 +47,13 @@ class LocalConnection(Connection):
     def connect(self):
         pass
 
-    async def copy_files(self, src_path: Path, dst_path: Path, override: bool = False, dry: bool = False):
+    async def copy_files(
+        self,
+        src_path: Path,
+        dst_path: Path,
+        override: bool = False,
+        dry: bool = False,
+    ) -> None:
         """
         Copy file from src_path to local dst_path directory.
 
@@ -74,42 +86,65 @@ class LocalConnection(Connection):
                     src_descr = handle_src.fileno()
                     dst_descr = handle_dst.fileno()
 
-                    await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
+                    await aiofiles.os.sendfile(
+                        dst_descr, src_descr, 0, bytes_cnt
+                    )
                 except Exception as e:
-                    print(f"ERROR: <{e}> when copying <{src_path.name}> to {dst_path.resolve()}")
+                    print(
+                        f"ERROR: <{e}> when copying <{src_path.name}> to"
+                        f" {dst_path.resolve()}"
+                    )
                     return
             print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
 
         else:
-            print(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
+            print(
+                f"ERROR: <{src_path.name}> already exists in the local target"
+                " dir. Try using --override."
+            )
 
 
 class FTPConnection(Connection):
     def __init__(self, url: str, login: str, password: str):
+        """
+        Init new ftp connection
+
+        :param url:
+        :param login:
+        :param password:
+        """
+
         self.url = url
         self.login = login
         self.password = password
 
     @asynccontextmanager
     async def connect(self):
+        """
+        Return an aioftp client instance to use as a context manager
+
+        :return:
+        """
+
         client = aioftp.Client()
         await client.connect(self.url)
         await client.login(user=self.login, password=self.password)
         yield client
 
     async def copy_files(
-        self, src_path: Path, dst_path: Path, override: bool = False, dry: bool = False
-    ):  # add dst_path?
+        self,
+        src_path: Path,
+        dst_path: Path,
+        override: bool = False,
+        dry: bool = False,
+    ):
         """
-        Send a file from src_path to FTP server's root folder.
+        Copy a file from src_path to FTP server's root folder.
 
         Override flag would override an existing file in a root folder.
         Dry mode would suppress actual copying but produce actual-like output.
 
         :param src_path: source path object
-        :param url: FTP server url
-        :param login: FTP login
-        :param password: FTP password
         :param override: flag to overwrite existing file
         :param dry: flag to suppress actual changes in system
         :return:
@@ -120,7 +155,10 @@ class FTPConnection(Connection):
         async with self.connect() as client:
             # Check if the file already exists on the server
             if await client.exists(src_path.name) and not override:
-                print(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
+                print(
+                    f"ERROR: <{src_path.name}> already exists on the FTP"
+                    " server. Try using --override."
+                )
                 return
 
             # Copy if not dry mode
@@ -128,13 +166,22 @@ class FTPConnection(Connection):
                 try:
                     await client.upload(src_path)
                 except Exception as e:
-                    print(f"ERROR: <{e}> when copying <{src_path.name}> to ftp")
+                    print(
+                        f"ERROR: <{e}> when copying <{src_path.name}> to ftp"
+                    )
                     return
             print(f"SUCCESS: <{src_path.name}> copied to ftp")
 
 
 class OwnCloudConnection(Connection):
-    def __init__(self, src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
+    def __init__(
+        self,
+        src_path: Path,
+        url: str,
+        password: str,
+        override: bool = False,
+        dry: bool = False,
+    ):
         super().__init__(src_path)
         self.url = url
         self.password = password
