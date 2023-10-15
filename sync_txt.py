@@ -10,14 +10,10 @@
 
 import argparse
 import asyncio
-import base64
-import http
 import sys
 import time
 from pathlib import Path
-from xml.etree import ElementTree
 
-import aiohttp
 from ipdb import set_trace
 
 from config import Config
@@ -37,91 +33,6 @@ def init_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def copy_to_owncloud(
-    src_path: Path,
-    url: str,
-    password: str,
-    override: bool = False,
-    dry: bool = False,
-):
-    """
-    Send a file from src_path to OwnCloud server's root shared folder.
-
-    Override flag would override an existing file in a root folder.
-    Dry mode would suppress actual copying but produce actual-like output.
-
-    :param src_path: source path object
-    :param url: owncloud shared folder url
-    :param password: owncloud password for shared folder
-    :param override: flag to overwrite existing file
-    :param dry: flag to suppress actual changes in system
-    :return:
-    """
-
-    print(f"copying <{src_path.name}> to owncloud")
-
-    # Parse shared dir id and encode it along with password in base64
-    token = url.split("/")[-1]
-    credentials = f"{token}:{password}"
-    credentials_encoded = base64.b64encode(credentials.encode()).decode()
-
-    headers = {
-        "Depth": "1",
-        "Authorization": f"Basic {credentials_encoded}",
-        "Content-Type": "text/html",
-    }
-
-    async with aiohttp.ClientSession() as session:
-        # Check if the file already exists on the server
-        async with session.request(
-            "PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers
-        ) as resp:
-            if resp.status != http.HTTPStatus.MULTI_STATUS:
-                print(
-                    f"ERROR: <{resp.status}> HTTP status when connecting to"
-                    " owncloud (<207_MULTI_STATUS> expected)"
-                )
-                return
-
-            content = await resp.read()
-            xml_root = ElementTree.fromstring(content)
-
-            for elem in xml_root.iter("{DAV:}response"):
-                path = elem.find("{DAV:}href").text
-                if path.endswith(src_path.name) and not override:
-                    print(
-                        f"ERROR: <{src_path.name}> already exists on the"
-                        " OwnCloud server. Try using --override."
-                    )
-                    return
-
-        # Copy if not dry mode
-        if not dry:
-            file = open(src_path, "rb").read()
-            try:
-                resp = await session.put(
-                    f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}",
-                    data=file,
-                    headers=headers,
-                )
-            except Exception as e:
-                print(
-                    f"ERROR: <{e}> when copying <{src_path.name}> to owncloud"
-                )
-                return
-            if resp.status not in (
-                http.HTTPStatus.NO_CONTENT,
-                http.HTTPStatus.CREATED,
-            ):
-                print(
-                    f"ERROR: <{resp.status}> HTTP status when copying"
-                    f" <{src_path.name}> to owncloud (<201_CREATED> or"
-                    " <204_NO_CONTENT> expected)"
-                )
-                return
-        print(f"SUCCESS: <{src_path.name}> copied to owncloud")
-
-
 async def main():
     assert sys.version_info >= (3, 7), "Python >= 3.7 is required"
 
@@ -134,12 +45,13 @@ async def main():
 
     start = time.perf_counter()
 
-    # Building source files paths
+    # Создание путей исходных файлов
     src_paths = list()
     src_paths.append(Path(args.dir_1 + DESTINATIONS["files"][0]["name"]))
     src_paths.append(Path(args.dir_2 + DESTINATIONS["files"][1]["name"]))
     src_paths.append(Path(args.dir_3 + DESTINATIONS["files"][2]["name"]))
 
+    # Проверка наличия исходных файлов
     for i, path in enumerate(src_paths, start=1):
         if not path.exists():
             raise SystemExit(f"ERROR: <file{i}> path doesn't exist.")
@@ -149,43 +61,49 @@ async def main():
 
     tasks = list()
 
+    # Создание объектов соединений для каждого эндпоинта
     local_connection = LocalConnection()
     ftp_connection = FTPConnection(
         Config.FTP_ADDRESS, Config.FTP_USER, Config.FTP_PASSWORD
     )
     owncloud_connection = OwnCloudConnection(
-        Config.OWNCLOUD_URL, None, Config.OWNCLOUD_PASSWORD
+        url=Config.OWNCLOUD_URL, password=Config.OWNCLOUD_PASSWORD
     )
 
-    # Create copying tasks
+    # Создание задач на копирование
     for src_path, file in zip(src_paths, DESTINATIONS["files"]):
-        if "ftp" in file["endpoints"]:  # Copying to FTP
+        if "folder" in file["endpoints"]:  # Копирование локально
             tasks.append(
                 asyncio.create_task(
-                    ftp_connection.copy_files(src_path, None, override, dry)
+                    local_connection.copy_file(
+                        src_path=src_path,
+                        dst_path=local_dest_path,
+                        override=override,
+                        dry=dry,
+                    )
                 )
             )
 
-        if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
-            # tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, override, dry))
-            tasks.append(
-                owncloud_connection.copy_files(src_path, None, override, dry)
-            )
-
-        if "folder" in file["endpoints"]:  # Copying locally
+        if "ftp" in file["endpoints"]:  # Копирование на FTP
             tasks.append(
                 asyncio.create_task(
-                    local_connection.copy_files(
-                        src_path, local_dest_path, override, dry
+                    ftp_connection.copy_file(
+                        src_path=src_path, override=override, dry=dry
                     )
+                )
+            )
+
+        if "owncloud" in file["endpoints"]:  # Копирование на OwnCloud
+            tasks.append(
+                owncloud_connection.copy_file(
+                    src_path=src_path, override=override, dry=dry
                 )
             )
 
     await asyncio.gather(*tasks, return_exceptions=False)
 
     end = time.perf_counter()
-    # seconds_elapsed = int(round(end - start, 0))  # todo
-    seconds_elapsed = end - start
+    seconds_elapsed = int(round(end - start, 0))
     if not dry:
         print(f"\nSUCCESS: copied in {seconds_elapsed} second(s)")
 

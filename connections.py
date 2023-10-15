@@ -1,10 +1,10 @@
+import asyncio
 import base64
 import http
-import os
-import sys
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 from xml.etree import ElementTree
 
 import aiofiles
@@ -35,12 +35,8 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    def copy_files(
-        self,
-        src_path: Path,
-        dst_path: Path,
-        override: bool = False,
-        dry: bool = False,
+    def copy_file(
+        self, src_path: Path, dst_path: Path, override: bool, dry: bool
     ):
         pass
 
@@ -52,7 +48,7 @@ class LocalConnection(Connection):
     def connect(self):
         pass
 
-    async def copy_files(
+    async def copy_file(
         self,
         src_path: Path,
         dst_path: Path,
@@ -136,10 +132,10 @@ class FTPConnection(Connection):
         await client.login(user=self.login, password=self.password)
         yield client
 
-    async def copy_files(
+    async def copy_file(
         self,
         src_path: Path,
-        dst_path: None,
+        dst_path: Path = Path("/"),
         override: bool = False,
         dry: bool = False,
     ):
@@ -181,18 +177,24 @@ class FTPConnection(Connection):
 
 
 class OwnCloudConnection(Connection):
-    def __init__(self, url: str, login: str, password: str):
+    _session = None
+
+    def __init__(self, url: str, password: str):
         """
         Init new OwnCloud connection
 
         :param url:
-        :param login:
         :param password:
         """
 
         self.url = url
-        self.login = login
         self.password = password
+
+    @classmethod
+    def get_session(cls):
+        if cls._session is None:
+            cls._session = aiohttp.ClientSession()
+        return cls._session
 
     @asynccontextmanager
     async def connect(self):
@@ -202,35 +204,14 @@ class OwnCloudConnection(Connection):
         :return:
         """
 
-        # # Parse shared dir id and encode it along with password in base64
-        # token = self.url.split("/")[-1]
-        # credentials = f"{token}:{self.password}"
-        # credentials_encoded = base64.b64encode(credentials.encode()).decode()
-        #
-        # headers = {
-        #     "Depth": "1",
-        #     "Authorization": f"Basic {credentials_encoded}",
-        #     "Content-Type": "text/html",
-        # }
-
-        # session = aiohttp.ClientSession(Config.OWNCLOUD_WEBDAV_ENDPOINT)
-        session = aiohttp.ClientSession()
-
-        # resp = await session.request("PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers)
-        #
-        # if resp.status != http.HTTPStatus.MULTI_STATUS:
-        #     print(
-        #         f"ERROR: <{resp.status}> HTTP status when connecting to"
-        #         " owncloud (<207_MULTI_STATUS> expected)"
-        #     )
-        #     return
+        session = self.get_session()
 
         yield session
 
-    async def copy_files(
+    async def copy_file(
         self,
         src_path: Path,
-        dst_path: Path,
+        dst_path: Path = Path("/"),
         override: bool = False,
         dry: bool = False,
     ):
@@ -263,7 +244,6 @@ class OwnCloudConnection(Connection):
 
         # async with aiohttp.ClientSession() as session:
         async with self.connect() as session:
-            # set_trace()
             # # Check if the file already exists on the server
             async with session.request(
                 "PROPFIND", Config.OWNCLOUD_WEBDAV_ENDPOINT, headers=headers
