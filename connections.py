@@ -26,7 +26,6 @@ class Connection(ABC):
 
     @abstractmethod
     def connect(self):
-        # using url and creds to create connection. use it as a context manager?
         pass
 
     @abstractmethod
@@ -134,17 +133,19 @@ class FTPConnection(Connection):
     async def copy_files(
         self,
         src_path: Path,
-        dst_path: Path,
+        dst_path: None,
         override: bool = False,
         dry: bool = False,
     ):
         """
         Copy a file from src_path to FTP server's root folder.
 
+        dst_path is not used in this version of ftp copying
         Override flag would override an existing file in a root folder.
         Dry mode would suppress actual copying but produce actual-like output.
 
         :param src_path: source path object
+        :param dst_path: destination path object
         :param override: flag to overwrite existing file
         :param dry: flag to suppress actual changes in system
         :return:
