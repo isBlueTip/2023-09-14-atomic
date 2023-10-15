@@ -21,7 +21,7 @@ import aiohttp
 from ipdb import set_trace
 
 from config import Config
-from connections import FTPConnection, LocalConnection
+from connections import FTPConnection, LocalConnection, OwnCloudConnection
 from constants import DESTINATIONS
 
 
@@ -153,6 +153,9 @@ async def main():
     ftp_connection = FTPConnection(
         Config.FTP_ADDRESS, Config.FTP_USER, Config.FTP_PASSWORD
     )
+    owncloud_connection = OwnCloudConnection(
+        Config.OWNCLOUD_URL, None, Config.OWNCLOUD_PASSWORD
+    )
 
     # Create copying tasks
     for src_path, file in zip(src_paths, DESTINATIONS["files"]):
@@ -163,8 +166,11 @@ async def main():
                 )
             )
 
-        # if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
-        #     tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, override, dry))
+        if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
+            # tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, override, dry))
+            tasks.append(
+                owncloud_connection.copy_files(src_path, None, override, dry)
+            )
 
         if "folder" in file["endpoints"]:  # Copying locally
             tasks.append(
