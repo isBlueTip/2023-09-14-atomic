@@ -17,12 +17,11 @@ import time
 from pathlib import Path
 from xml.etree import ElementTree
 
-import aiofiles
-import aiofiles.os
-import aioftp
 import aiohttp
+from ipdb import set_trace
 
 from config import Config
+from connections import FTPConnection, LocalConnection
 from constants import DESTINATIONS
 
 
@@ -36,47 +35,6 @@ def init_args() -> argparse.Namespace:
     parser.add_argument("-d", "--dry", action="store_true")
 
     return parser.parse_args()
-
-
-async def copy_to_ftp(
-        src_path: Path,
-        url: str,
-        login: str,
-        password: str,
-        override: bool = False,
-        dry: bool = False
-) -> None:
-    """
-    Send a file from src_path to FTP server's root folder.
-
-    Override flag would override an existing file in a root folder.
-    Dry mode would suppress actual copying but produce actual-like output.
-
-    :param src_path: source path object
-    :param url: FTP server url
-    :param login: FTP login
-    :param password: FTP password
-    :param override: flag to overwrite existing file
-    :param dry: flag to suppress actual changes in system
-    :return:
-    """
-
-    print(f"copying <{src_path.name}> to ftp")
-
-    async with aioftp.Client.context(url, user=login, password=password) as client:
-        # Check if the file already exists on the server
-        if await client.exists(src_path.name) and not override:
-            print(f"ERROR: <{src_path.name}> already exists on the FTP server. Try using --override.")
-            return
-
-        # Copy if not dry mode
-        if not dry:
-            try:
-                await client.upload(src_path)
-            except Exception as e:
-                print(f"ERROR: <{e}> when copying <{src_path.name}> to ftp")
-                return
-        print(f"SUCCESS: <{src_path.name}> copied to ftp")
 
 
 async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bool = False, dry: bool = False):
@@ -127,7 +85,9 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
         if not dry:
             file = open(src_path, "rb").read()
             try:
-                resp = await session.put(f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers)
+                resp = await session.put(
+                    f"{Config.OWNCLOUD_WEBDAV_ENDPOINT}/{src_path.name}", data=file, headers=headers
+                )
             except Exception as e:
                 print(f"ERROR: <{e}> when copying <{src_path.name}> to owncloud")
                 return
@@ -138,47 +98,6 @@ async def copy_to_owncloud(src_path: Path, url: str, password: str, override: bo
                 )
                 return
         print(f"SUCCESS: <{src_path.name}> copied to owncloud")
-
-
-async def copy_locally(src_path: Path, dst_path: Path, override: bool = False, dry: bool = False) -> None:
-    """
-    Copy file from src_path to local target_path folder.
-
-    Override flag would override an existing file in a dst_path.
-    Dry mode would suppress actual copying but produce actual-like output.
-
-    :param src_path: source path object
-    :param dst_path: destination directory path object
-    :param override: flag to overwrite existing file
-    :param dry: flag to suppress actual changes in system
-    :return:
-    """
-
-    print(f"copying <{src_path.name}> to {dst_path.resolve()}")
-
-    # Check if the file already exists in the destination folder
-    if not dst_path.exists() or override:
-        # Copy if not dry mode
-        if not dry:
-            try:
-                dst_path = dst_path.joinpath(src_path.name)  # Replace target dir with file
-                handle_src = await aiofiles.open(src_path, mode="r")
-                handle_dst = await aiofiles.open(dst_path, mode="w")
-
-                stat_src = await aiofiles.os.stat(src_path)
-                bytes_cnt = stat_src.st_size
-
-                src_descr = handle_src.fileno()
-                dst_descr = handle_dst.fileno()
-
-                await aiofiles.os.sendfile(dst_descr, src_descr, 0, bytes_cnt)
-            except Exception as e:
-                print(f"ERROR: <{e}> when copying <{src_path.name}> to {dst_path.resolve()}")
-                return
-        print(f"SUCCESS: <{src_path.name}> copied to {dst_path.resolve()}")
-
-    else:
-        print(f"ERROR: <{src_path.name}> already exists in the local target dir. Try using --override.")
 
 
 async def main():
@@ -208,29 +127,25 @@ async def main():
 
     tasks = list()
 
+    local_connection = LocalConnection()
+    ftp_connection = FTPConnection(Config.FTP_ADDRESS, Config.FTP_USER, Config.FTP_PASSWORD)
+
     # Create copying tasks
     for src_path, file in zip(src_paths, DESTINATIONS["files"]):
         if "ftp" in file["endpoints"]:  # Copying to FTP
-            tasks.append(asyncio.create_task(copy_to_ftp(
-                src_path,
-                Config.FTP_ADDRESS,
-                Config.FTP_USER,
-                Config.FTP_PASSWORD,
-                OVERRIDE,
-                DRY)
-            )
-            )
+            tasks.append(asyncio.create_task(ftp_connection.copy_files(src_path, None, OVERRIDE, DRY)))
 
-        if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
-            tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
+        # if "owncloud" in file["endpoints"]:  # Copying to OwnCloud
+        #     tasks.append(copy_to_owncloud(src_path, Config.OWNCLOUD_URL, Config.OWNCLOUD_PASSWORD, OVERRIDE, DRY))
 
         if "folder" in file["endpoints"]:  # Copying locally
-            tasks.append(asyncio.create_task(copy_locally(src_path, local_dest_path, OVERRIDE, DRY)))
+            tasks.append(asyncio.create_task(local_connection.copy_files(src_path, local_dest_path, OVERRIDE, DRY)))
 
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=False)
 
     end = time.perf_counter()
-    seconds_elapsed = int(round(end - start, 0))
+    # seconds_elapsed = int(round(end - start, 0))
+    seconds_elapsed = end - start
     if not DRY:
         print(f"\nSUCCESS: copied in {seconds_elapsed} second(s)")
 
